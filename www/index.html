@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Resistcorp's \AWESOME/ SMS emulator</title>
+    <style type="text/css">
+      .buttons{
+        position: absolute;
+        right : 10px;
+        bottom : 10px;
+      }
+      canvas{
+        position: absolute;
+
+      }
+      #state{
+        position: absolute;
+        right : 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="screen"></canvas>
+    <div id="state">
+    </div>
+    <div class="buttons">
+      <button onclick="EMUL.advance()">Advance clock</button>
+      <button onclick="EMUL.pause()">pause clock</button>
+      <button onclick="EMUL.start()">start clock</button>
+    </div>
+    <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
+    <script src="./bootstrap.js"></script>
+  </body>
+</html>
