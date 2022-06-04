@@ -39,14 +39,15 @@ export function start(){
 	emulo.start();
 }
 export function getState(){
+	let flag_names = ["S","Z","Y","H","X","P","N","C"];
 	let ret = "";
 	let state = emulo.get_state();
 	let flags = emulo.get_flags();
-	ret += Object.entries(flags).map(([k, v]) => `${k} : ${v}`).join(" ");
+	ret += flag_names.map(n => `${n} : ${flags[n+"F"]}`).join(" ");
 	for(let [key, val] of Object.getOwnPropertyNames(state.__proto__)
 		.map(k => [k, state[k]])
 		){
-		if(key && typeof val != "function")
+		if(key && key != "ptr" && typeof val != "function")
 			ret += key + " : " + val + "\n";
 	}
 	return `<pre>${ret}</pre>`
