@@ -1,13 +1,21 @@
-import * as wasm from "rust-emulator-proto";
+import {default as init, create_emulo, version} from "./emulator/emulator.js";
 
+let emulo;
+let screenData;
 const screen = document.getElementById("screen");
-const emulo = wasm.init();
-let screenData = emulo.take();
-console.log(wasm.version());
-screen.width = emulo.size.width;
-screen.height = emulo.size.height;
-
 const ctx = screen.getContext("2d");
+async function startup(){
+	await init();
+	emulo = create_emulo();
+	screenData = emulo.take();
+	console.log(version());
+	screen.width = emulo.size.width;
+	screen.height = emulo.size.height;
+
+
+	getMemory()
+	frame(0.0)
+}
 
 function frame(time){
 	let delta = emulo.tick(time);
@@ -53,5 +61,4 @@ export function getState(){
 	return `<pre>${ret}</pre>`
 }
 
-getMemory()
-frame(0.0)
+startup();

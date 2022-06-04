@@ -36,3 +36,10 @@ wasm-bindgen-test = "0.3.13"
 [profile.release]
 # Tell `rustc` to optimize for small code size.
 opt-level = "s"
+
+[unstable]
+build-std = ['std', 'panic_abort']
+
+[build]
+target = "wasm32-unknown-unknown"
+rustflags = '-Ctarget-feature=+atomics,+bulk-memory'

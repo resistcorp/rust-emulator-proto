@@ -1,0 +1,23 @@
+{
+  "name": "sms-emulator",
+  "version": "0.0.1",
+  "description": "a sega master system emulator for fun and games",
+  "main": "first.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/resistcorp/rust-emulator-proto.git"
+  },
+  "author": "Boris Evieux",
+  "license": "WTFPL",
+  "type" : "module",
+  "bugs": {
+    "url": "https://github.com/resistcorp/rust-emulator-proto/issues"
+  },
+  "homepage": "https://github.com/resistcorp/rust-emulator-proto#readme"
+}

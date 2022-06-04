@@ -1,4 +1,8 @@
+/tools
+/www/emulator
 /target
+/tests/**
+/homebrews/**
 **/*.rs.bk
 Cargo.lock
 bin/

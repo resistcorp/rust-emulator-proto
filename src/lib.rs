@@ -19,11 +19,6 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 extern {
     fn alert(s: &str);
 }
-
-#[wasm_bindgen]
-pub fn greet(name : &str) {
-    alert(& format!("Hello, {}!", name));
-}
 const ROM: &[u8; 32768] = include_bytes!("../tests/Hello World.sms");
 #[wasm_bindgen]
 #[derive(Clone, Copy)]
@@ -437,7 +432,7 @@ struct VDP {
 
 
 #[wasm_bindgen]
-pub fn init() -> Emulator {
+pub fn create_emulo() -> Emulator {
     utils::set_panic_hook();
     let opcodes = init_opcodes();
     Emulator::new(500, 400, opcodes)
