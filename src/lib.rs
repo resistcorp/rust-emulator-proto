@@ -189,12 +189,14 @@ impl EmulatorState{
         let interrupt_mode = 0;
         let next_offset = None;
 
-        Self{
+        let mut ret = Self{
             ram, ports, cart_ram, A, F, BC, DE, HL,
             IX, IY, PC, SP, I, R,
             AFp, BCp, DEp, HLp, mappers,
             interrupts_enabled, interrupt_mode, next_offset
-        }
+        };
+        ret.reset();
+        ret
     }
 
     fn reset(&mut self){
