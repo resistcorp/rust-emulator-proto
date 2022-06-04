@@ -1,6 +1,8 @@
 ## About this project
 
-I'm doing it essentially for fun (![inigo montoya](res/inigo.jpg "FUN"))
+I'm doing it essentially for fun
+
+<img src="res/inigo.jpg" alt="FUN" title="FUN" height="100" /> 
 
 I watched One Lone Coder's [NES emulator from scratch](https://www.youtube.com/watch?v=nViZg02IMQo&list=PLrOv9FMX8xJHqMvSGB_9G9nZZ_4IgteYf) videos, and it got me going
 
