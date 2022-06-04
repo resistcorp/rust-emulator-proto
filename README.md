@@ -1,6 +1,6 @@
 ## About this project
 
-I'm doing it essentially for fun (![inigo montoya](inigo.jpg "FUN"))
+I'm doing it essentially for fun (![inigo montoya](res/inigo.jpg "FUN"))
 
 I watched One Lone Coder's [NES emulator from scratch](https://www.youtube.com/watch?v=nViZg02IMQo&list=PLrOv9FMX8xJHqMvSGB_9G9nZZ_4IgteYf) videos, and it got me going
 
@@ -25,12 +25,14 @@ I used the wasm template to kickstart the project. It is going away soon
 
 you'll need to run `npm install` in the www folder until I get rid of the dependencies and write my dev server.
 
+on windows, [this batch](start_emulator_dev.bat) will setup a "usable" live code experience on virtual disk W:
+
 ### 🛠️ dev with `www/npm run dev` and `wasm-pack build`
 ### 🛠️ Build rust code with `wasm-pack build` (not autobuilt for now, but it hot-reloads)
 
 
 ## Licence
-[WTFPL](http://www.wtfpl.net/) You're free to copy my terrible code and make it even worse.
+[WTFPL](http://www.wtfpl.net/) You're free to copy my terrible code and make it even worse. Don't use it on important things though.
 
 If you do make it better I'd like to know, thanks
 
