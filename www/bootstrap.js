@@ -6,3 +6,4 @@ import("./index.js")
     window.EMUL = module;
   })
   .catch(e => console.error("Error importing `index.js`:", e));
+

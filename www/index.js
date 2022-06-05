@@ -12,7 +12,6 @@ async function startup(){
 	screen.width = emulo.size.width;
 	screen.height = emulo.size.height;
 
-
 	getMemory()
 	frame(0.0)
 }
@@ -51,7 +50,7 @@ export function getState(){
 	let ret = "";
 	let state = emulo.get_state();
 	let flags = emulo.get_flags();
-	ret += flag_names.map(n => `${n} : ${flags[n+"F"]}`).join(" ");
+	ret += flag_names.map(n => `${n} : ${flags[n+"F"]}`).join(" ") + "\n";
 	for(let [key, val] of Object.getOwnPropertyNames(state.__proto__)
 		.map(k => [k, state[k]])
 		){
