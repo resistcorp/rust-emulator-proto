@@ -10,6 +10,10 @@ I do it in rust cause I want to understand the language better. Don't use my cod
 
 I usually do the code on stream at [my twitch channel](https://www.twitch.tv/resistcorp)
 
+you should be able to start a live coding experience with `node first.js`, no install required. hopefully.
+
+Only tested in windows
+
 ### premise
 The SMS (as most early Sega machines) is based on the Zilog 80 processor. First point of order is t oemulate that.
 
@@ -26,7 +30,7 @@ I used the wasm template to kickstart the project. It is going away soon
 - needs rust nightly for now until I lose the bigint dependency
 - needs node for hot-reload during dev
 
-you should be able to start everything with node first.js
+again, you should be able to start everything with `node first.js`
 
 on windows, [this batch](start_emulator_dev.bat) will setup a "usable" live code experience on virtual disk W:
 
