@@ -21,15 +21,15 @@ let autoreload = true;
 let generation = 0;
 
 build_pkg(false, true).then(async _=>{
-	start_watch(ABORT);
+	let messaging = start_watch(ABORT);
 	start_server(ABORT);
 	await open_browser();
-	start_interface(ABORT);
+	start_interface(ABORT, messaging);
 });
 
 // ==================================================== cmd line interface
 
-async function start_interface(abort_controller) {
+async function start_interface(abort_controller, messaging) {
 	const {signal} = abort_controller;
   const rl = readline.createInterface({
     input: process.stdin,
@@ -37,14 +37,37 @@ async function start_interface(abort_controller) {
   	signal
   });
 
+
+  const question = async prompt => new Promise((resolve, reject)=>{
+  	const local_abort = new AbortController();
+  	let event = reason => {
+  		local_abort.abort(reason);
+  		resolve({error:reason, done:false});
+  	};
+  	signal.addEventListener("abort", event, { once: true });
+  	const signal_l = local_abort.signal;//shadow variable
+  	messaging(event)
+  	try{
+  		rl.question("wywd ?", {signal : signal_l}, value => resolve({value, done:false}));
+  	}catch(error){
+  		console.log(error);
+  		console.log(signal_l.reason);
+  		resolve({error, done:true});
+  	}
+  })
+
   let run = true;
-  const lines = rl[Symbol.asyncIterator]();
+  // const lines = rl[Symbol.asyncIterator]();
 
   console.log("process started. type help for help");
   do{
-  	process.stdout.write("wyw ? >");
-  	const {value, done} = await lines.next();
+  	// process.stdout.write("wyw ? >");
+  	const {value, error, done} = await question("wywd ?");
   	run &&= !done;
+  	if(error){//something asked us to wait
+  		await Promise.resolve(error);
+  		continue;
+  	}
   	if(value){
 	  	let [command, ...args] = value.split(" ");
 	    switch(command.toLowerCase()){
@@ -123,6 +146,11 @@ async function start_interface(abort_controller) {
 
 // ==================================================== rust build script
 async function build_pkg(verbose, startup){
+	let time = 0;
+	const id = setInterval(()=>{
+		let len = time++%10
+		process.stdout.write("\r"+"▓".repeat(len)+"░".repeat(10-len));
+	}, 200);
 	return new Promise((resolve, reject) => {
 		let build = spawn("wasm-pack", ["build", "--target", "web", "--out-dir", "www/pkg", "--out-name", "emulator"]);
 		if(startup)
@@ -139,6 +167,7 @@ async function build_pkg(verbose, startup){
 		}
 
 		build.on('close', (code) => {
+			clearInterval(id)
 			if(code){
 				console.log("rust code build failed");
 			}else{
@@ -146,7 +175,7 @@ async function build_pkg(verbose, startup){
 			}
 		  resolve(code);
 		});
-	})
+	});
 }
 
 // ==================================================== http sever
@@ -241,9 +270,15 @@ function start_watch(abort_controller) {
 			    console.log("watcher error", err);
 			  }
 		});
-	start_watcher(rust_src, debounce(event => build_pkg()));
+	let build_callback = null;
+	start_watcher(rust_src, debounce(event => {
+		console.log("detected rust change. rebuilding");
+		let promise = build_pkg();
+		build_callback?.(promise);
+	}));
 	start_watcher(js_src, debounce(event => reload_browsers()));
-	//start_watcher(pkg, event => reload_browsers());
+
+	return (callback) => build_callback = callback;//the repl will call this
 }
 function reload_browsers(force){
 	if(autoreload || force)
