@@ -401,21 +401,40 @@ impl EmulatorFlags{
         msk
     }
     pub const ALL : Self = Self::new(true, true, true, true ,true, true, true, true);
-    pub const C : Self = Self::new(false, false, false, false ,false, false, false, true);
-    pub const Z : Self = Self::new(false, true, false, false ,false, false, false, true);
-    pub const H : Self = Self::new(false, false, false, true ,false, false, false, false);
-    pub const N : Self = Self::new(false, false, false, false ,false, false, true, false);
-    pub const S : Self = Self::new(true, false, false, false ,false, false, false, false);
-    pub const P : Self = Self::new(false, false, false, false ,false, true, false, false);
+    pub const  C : Self = Self::new(false, false, false, false ,false, false, false, true);
+    pub const  Z : Self = Self::new(false, true, false, false ,false, false, false, true);
+    pub const  H : Self = Self::new(false, false, false, true ,false, false, false, false);
+    pub const  N : Self = Self::new(false, false, false, false ,false, false, true, false);
+    pub const  S : Self = Self::new(true, false, false, false ,false, false, false, false);
+    pub const  P : Self = Self::new(false, false, false, false ,false, true, false, false);
     pub const HN : Self = Self::new(false, false, false, true ,false, false, true, false);
 }
 pub fn to_u16(high : u8, low : u8) -> u16 {
-    ((high as u16) << 8) | low as u16
+    let mut ret = 0x0000;
+    set_low_byte(&mut ret, low);
+    set_high_byte(&mut ret, high);
+    ret
 }
 
 pub fn split_u16(val : u16, high : &mut u8, low : &mut u8){
-    *high = (val >> 8)   as u8;
-    *low  = (val & 0xFF) as u8;
+    *high = high_byte(val);
+    *low  = low_byte(val);
+}
+
+pub fn low_byte(val : u16) -> u8 {
+    (val >>  8) as u8
+}
+
+pub fn high_byte(val : u16) -> u8 {
+    (val & 0x00FF) as u8
+}
+
+pub fn set_low_byte(val : &mut u16, byte : u8) {
+    *val = (byte as u16) << 8 | *val & 0x00FF;
+}
+
+pub fn set_high_byte(val : &mut u16, byte : u8) {
+    *val = (byte as u16) << 0 | *val & 0xFF00;
 }
 
 pub fn is_even_bits(v : u8) -> bool {

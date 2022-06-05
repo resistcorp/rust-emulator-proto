@@ -5,8 +5,7 @@ use web_sys::console;
 use std::str::FromStr;
 use strum_macros::EnumString;
 
-use crate::{split_u16, to_u16, is_even_bits};
-use crate::{EmulatorState, EmulatorFlags};
+use crate::*;
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -492,7 +491,7 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
         OUTD | OUTI | INI | IND => {
             let is_in = op == INI ||op == IND;
             Some(Box::new(move |s| {
-                let port =  (s.BC & 0xFF) as u8;
+                let port =  low_byte(s.BC);
                 if is_in {
                     let val = s.port_read(port);
                     s.mem_write(s.HL, val);
@@ -505,8 +504,9 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
                 }else{
                     s.HL += 1;
                 }
-                s.BC -= 0x0100;
-                s.flags_set_to(EmulatorFlags::Z, s.BC & 0xFF00 == 0);
+                let b = high_byte(s.BC);
+                set_high_byte(&mut s.BC, b -1);
+                s.flags_set_to(EmulatorFlags::Z, high_byte(s.BC) == 0);
                 s.flags_set(EmulatorFlags::N)
             }))
         },
@@ -518,7 +518,7 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             assert!(port == "(n)" || port == "(C)");
             let get_port = match port {
                 "(n)" => |s: &mut EmulatorState| s.next(),
-                "(C)" => |s: &mut EmulatorState| (s.BC & 0xFF) as u8,
+                "(C)" => |s: &mut EmulatorState| low_byte(s.BC),
                 _ => unreachable!()
             };
             if let W8(w) = make_writer(pos[0]) {
@@ -539,7 +539,7 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             assert!(port == "(n)" || port == "(C)");
             let get_port = match port {
                 "(n)" => |s: &mut EmulatorState| s.next(),
-                "(C)" => |s: &mut EmulatorState| (s.BC & 0xFF) as u8,
+                "(C)" => |s: &mut EmulatorState| low_byte(s.BC),
                 _ => unreachable!()
             };
             if let R8(r) = make_reader(pos[1]) {
@@ -732,7 +732,7 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             };
             let the_op = make_standalone(op_loop, &vec![]).unwrap();
             Some(Box::new(move |s| {
-                while s.BC & 0xFF00 != 0 {
+                while high_byte(s.BC) != 0 {
                     the_op(s);
                 }
                 //Z is set, C is reset, N is reset, S, H, and P/V are undefined.
@@ -853,18 +853,18 @@ fn make_reader(s : &str) -> Reader{
         "NN"|"nn" => R16(Box::new(|s| s.nn() )),
         "A" => R8(Box::new(|s| s.A )),
         "F" => R8(Box::new(|s| s.F )),
-        "B" => R8(Box::new(|s| (s.BC >> 8) as u8 )),
-        "C" => R8(Box::new(|s| (s.BC & 0xFF) as u8 )),
-        "D" => R8(Box::new(|s| (s.DE >> 8) as u8 )),
-        "E" => R8(Box::new(|s| (s.DE & 0xFF) as u8 )),
-        "H" => R8(Box::new(|s| (s.HL >> 8) as u8 )),
-        "L" => R8(Box::new(|s| (s.HL & 0xFF) as u8 )),
+        "B" => R8(Box::new(|s| high_byte(s.BC)  )),
+        "C" => R8(Box::new(|s| low_byte(s.BC) )),
+        "D" => R8(Box::new(|s| high_byte(s.DE)  )),
+        "E" => R8(Box::new(|s| low_byte(s.DE) )),
+        "H" => R8(Box::new(|s| high_byte(s.HL)  )),
+        "L" => R8(Box::new(|s| low_byte(s.HL) )),
         "I" => R8(Box::new(|s| s.I )),
         "R" => R8(Box::new(|s| s.R )),
-        "IXH" => R8(Box::new(|s| (s.IX >> 8) as u8)),
-        "IXL" => R8(Box::new(|s| (s.IX & 0xFF) as u8)),
-        "IYH" => R8(Box::new(|s| (s.IY >> 8) as u8)),
-        "IYL" => R8(Box::new(|s| (s.IY & 0xFF) as u8)),
+        "IXH" => R8(Box::new(|s| high_byte(s.IX) )),
+        "IXL" => R8(Box::new(|s| low_byte(s.IX))),
+        "IYH" => R8(Box::new(|s| high_byte(s.IY) )),
+        "IYL" => R8(Box::new(|s| low_byte(s.IY))),
         "AF" => R16(Box::new(|s| to_u16(s.A, s.F))),
         "AF'" => R16(Box::new(|s| s.AFp)),
         "BC" => R16(Box::new(|s| s.BC)),
@@ -981,51 +981,19 @@ fn make_writer(s : &str) -> Writer{
     match s {
         "A" => W8(Box::new(|s, v| s.A = v)),
         "F" => W8(Box::new(|s, v| s.F = v)),
-        "B" => W8(Box::new(|s, v| {
-            s.BC &= 0x00FF;
-            s.BC |= (v as u16) << 8;
-        })),
-        "C" => W8(Box::new(|s, v| {
-            s.BC &= 0xFF00;
-            s.BC |= v as u16;
-        } )),
-        "D" => W8(Box::new(|s, v| {
-            s.DE &= 0x00FF;
-            s.DE |= (v as u16) << 8;
-        })),
-        "E" => W8(Box::new(|s, v| {
-            s.DE &= 0xFF00;
-            s.DE |= v as u16;
-        } )),
-        "H" => W8(Box::new(|s, v|  {
-            s.HL &= 0x00FF;
-            s.HL |= (v as u16) << 8;
-        })),
-        "L" => W8(Box::new(|s, v| {
-            s.HL &= 0xFF00;
-            s.HL |= v as u16;
-        } )),
+        "B" => W8(Box::new(|s, v| set_high_byte(&mut s.BC, v))),
+        "C" => W8(Box::new(|s, v|  set_low_byte(&mut s.BC, v))),
+        "D" => W8(Box::new(|s, v| set_high_byte(&mut s.DE, v))),
+        "E" => W8(Box::new(|s, v|  set_low_byte(&mut s.DE, v))),
+        "H" => W8(Box::new(|s, v| set_high_byte(&mut s.HL, v))),
+        "L" => W8(Box::new(|s, v|  set_low_byte(&mut s.HL, v))),
         "I" => W8(Box::new(|s, v| s.I = v )),
         "R" => W8(Box::new(|s, v| s.R = v )),
-        "IXh" => W8(Box::new(|s, v|  {
-            s.IX &= 0x00FF;
-            s.IX |= (v as u16) << 8;
-        })),
-        "IXl" => W8(Box::new(|s, v|  {
-            s.IX &= 0xFF00;
-            s.IX |= v as u16;
-        })),
-        "IYh" => W8(Box::new(|s, v|  {
-            s.IY &= 0x00FF;
-            s.IY |= (v as u16) << 8;
-        })),
-        "IYl" => W8(Box::new(|s, v|  {
-            s.IY &= 0xFF00;
-            s.IY |= v as u16;
-        })),
-        "AF" => W16(Box::new(|s, v|{
-            split_u16(v, &mut s.A, &mut s.F);
-        })),
+        "IXh" => W8(Box::new(|s, v| set_high_byte(&mut s.IX, v))),
+        "IXl" => W8(Box::new(|s, v|  set_low_byte(&mut s.IX, v))),
+        "IYh" => W8(Box::new(|s, v| set_high_byte(&mut s.IY, v))),
+        "IYl" => W8(Box::new(|s, v|  set_low_byte(&mut s.IY, v))),
+        "AF" => W16(Box::new(|s, v| split_u16(v, &mut s.A, &mut s.F))),
         "AF'" => W16(Box::new(|s, v| s.AFp = v)),
         "BC" => W16(Box::new(|s, v| s.BC = v)),
         "DE" => W16(Box::new(|s, v| s.DE = v)),
