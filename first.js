@@ -16,7 +16,10 @@ const pkg = paths.join("www", "pkg");
 
 const server = start_server();
 open_browser();
-start_interface();
+build_pkg(false, true).then(_=>{
+	open_browser();
+	start_interface();
+});
 let autoreload=true;
 
 let generation = 0;
@@ -81,9 +84,11 @@ async function start_interface() {
 }
 
 // ==================================================== rust build script
-async function build_pkg(verbose){
+async function build_pkg(verbose, startup){
 	return new Promise((resolve, reject) => {
 		let build = spawn("wasm-pack", ["build", "--target", "web", "--out-dir", "www/pkg", "--out-name", "pkg"]);
+		if(startup)
+			console.log(`building package. if first time it may be long`);
 
 		if(verbose){
 			build.stdout.on('data', (data) => {
