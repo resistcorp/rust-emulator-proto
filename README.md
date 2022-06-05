@@ -24,11 +24,13 @@ I used the wasm template to kickstart the project. It is going away soon
 [template-docs]: https://rustwasm.github.io/docs/wasm-pack/tutorials/npm-browser-packages/index.html
 
 - needs rust nightly for now until I lose the bigint dependency
-- needs npm for hot-reload during dev
+- needs node for hot-reload during dev
 
-you'll need to run `npm install` in the www folder until I get rid of the dependencies and write my dev server.
+you should be able to start everything with node first.js
 
 on windows, [this batch](start_emulator_dev.bat) will setup a "usable" live code experience on virtual disk W:
+
+
 
 ### 🛠️ dev with `www/npm run dev` and `wasm-pack build`
 ### 🛠️ Build rust code with `wasm-pack build` (not autobuilt for now, but it hot-reloads)

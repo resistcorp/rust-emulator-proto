@@ -14,15 +14,19 @@ const rust_src = paths.join("src");
 const js_src = paths.join("www");
 const pkg = paths.join("www", "pkg");
 
-let autoreload=true;
+//used to stop the watches on folders
+const ABORT = new AbortController();
+
+let autoreload = true;
 let generation = 0;
+let server;
 
-const server = build_pkg(false, true).then(_=>{
+build_pkg(false, true).then(async _=>{
 	open_browser();
+	start_watch(ABORT.signal);
+	server = start_server();
 	start_interface();
-	return start_server();
 });
-
 
 // ==================================================== cmd line interface
 
@@ -78,8 +82,9 @@ async function start_interface() {
    }while(run);
 
    console.log("KTHXBYE")
-   server?.close();
-   process.exit();
+   if(server) server.close(_ => process.exit());
+   if(ABORT) ABORT.abort();
+   else process.exit();
 }
 
 // ==================================================== rust build script
@@ -100,7 +105,11 @@ async function build_pkg(verbose, startup){
 		}
 
 		build.on('close', (code) => {
-		  console.log(`child process exited with code ${code}`);
+			if(code){
+				console.log("rust code build failed");
+			}else{
+				console.log("rust code build complete");
+			}
 		  resolve(code);
 		});
 	})
@@ -108,7 +117,7 @@ async function build_pkg(verbose, startup){
 
 // ==================================================== http sever
 function start_server(){
-	const ret = http.createServer(async (request, result)=>{
+	const serv = http.createServer(async (request, result)=>{
 		try{
 			if(request.method == "POST" && request.url == "/generation"){
 			  result.writeHead(200, { 'Content-Type': "text/plain" });
@@ -131,10 +140,11 @@ function start_server(){
 		  result.end('error');
 			console.log("wyw ?>");
 		}
-	}).listen(port);
-	console.log("server listening on", port);
+	});
+	serv.listen(port);
+	console.log(`HTTP server listening on port ${port}`);
 
-	return ret;
+	return serv;
 }
 
 function getActualPath(url){
@@ -169,6 +179,28 @@ function type(path){
 }
 
 // ====================================== misc
+async function start_watch(signal){
+	let start_watcher = (async (folder, callback) => {
+		  	try {
+			    const watcher = fs.watch(folder, { signal });
+			    for await (const event of watcher){
+			  				// console.log(event)
+				      callback();
+				    }
+			  } catch (err) {
+			    if (err.name === 'AbortError')
+			      return;
+			    console.log("watcher error", err);
+			  }
+		});
+	start_watcher(rust_src, debounce(event => build_pkg()));
+	start_watcher(js_src, debounce(event => reload_browsers()));
+	//start_watcher(pkg, event => reload_browsers());
+}
+function reload_browsers(force){
+	if(autoreload || force)
+		generation++;
+}
 function open_browser(){
 
    //warning untested except windows
@@ -182,4 +214,15 @@ function open_browser(){
 		  command = `google-chrome --no-sandbox ${url}`;
 		}
 		exec(command);
+}
+// ====================================== utilities
+function debounce(func, time = 100) {
+	let lastCallMilli = 0.0;
+	return (...args) => {
+		let now = performance.now();
+		if(lastCallMilli + time < now){
+			lastCallMilli = now;
+			func(...args)
+		}
+	}
 }

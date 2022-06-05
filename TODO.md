@@ -1,7 +1,7 @@
 # TODO 
-[-] make project build without headscratching
+[X] make project build without headscratching
+[X] finish stand alone build system : autobuild + autoreload
 [ ] update readme
-[ ] finish stand alone build system
 [ ] find how to run cpu exerciser
 [ ] finish opcodes
 [ ] build VDP
