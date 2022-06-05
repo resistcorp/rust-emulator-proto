@@ -5,5 +5,6 @@
 [ ] find how to run cpu exerciser
 [ ] finish opcodes
 [ ] build VDP
+[ ] test scripts ands autotests
 [ ] RUN GAMEZ
 [ ] build sound

@@ -19,33 +19,54 @@ const ABORT = new AbortController();
 
 let autoreload = true;
 let generation = 0;
-let server;
 
 build_pkg(false, true).then(async _=>{
-	open_browser();
-	start_watch(ABORT.signal);
-	server = start_server();
-	start_interface();
+	start_watch(ABORT);
+	start_server(ABORT);
+	await open_browser();
+	start_interface(ABORT);
 });
 
 // ==================================================== cmd line interface
 
-async function start_interface() {
+async function start_interface(abort_controller) {
+	const {signal} = abort_controller;
   const rl = readline.createInterface({
     input: process.stdin,
-  	output: process.stdout
+  	output: process.stdout,
+  	signal
   });
 
   let run = true;
   const lines = rl[Symbol.asyncIterator]();
 
+  console.log("process started. type help for help");
   do{
   	process.stdout.write("wyw ? >");
   	const {value, done} = await lines.next();
   	run &&= !done;
   	if(value){
 	  	let [command, ...args] = value.split(" ");
-	    switch(command){
+	    switch(command.toLowerCase()){
+	    	case "h" :
+	    	case "-h" :
+	    	case "?" :
+	    	case "/?" :
+	    	case "/H" :
+	    	case "halp" :
+	    	case "help" :
+	    		console.log("build watcher process :: usage");
+	    		console.log("");
+	    		console.log("* build [arg]         : starts a build of the rust wasm module");
+	    		console.log("                       (any arg will trigger verbose mode)");
+	    		console.log("* auto [on/off]       : start / stop autoreloading browsers");
+	    		console.log("  autoreload [on/off] : same as auto");
+	    		console.log("* [exit|kill|quit]    : stops this process and closes all browsers");
+	    		console.log("* reload              : triggers a reload in all browsers browsers");
+	    		console.log("* open                : open dev page in default browser");
+	    		console.log("* [h|-h|?|/?|/H|help] : prints this help");
+	    		console.log("");
+	    		break;
 	    	case "build" :
 	    		console.log(`"${command}" : building rust code`);
 	    		if(args.length)
@@ -63,11 +84,26 @@ async function start_interface() {
 	    		}
 	    		break;
 	    	case "open" :
-	    		open_browser();
+	    		await open_browser();
 	    		break;
+	    	case "reload" :
 	    	case "gen" :
-	    		console.log(`"${command}" : reloading.`);
+	    		console.log(`"${command}" : forcing reload.`);
 	    		generation++;
+	    		break;
+	    	case "auto" :
+	    	case "autoreload" :
+	    		let arg = args[0] || "on"
+	    		let val = ["on", "true", "yes", "1"].includes(arg.toLowerCase());
+	    		let value = val ? "ON" : "OFF";
+	    		if(val == autoreload){
+	    			console.log("autoreload already", value )
+	    		}else{
+	    			autoreload = val;
+	    			console.log("autoreload set to", value )
+	    		}
+	    		if(val)
+	    			generation++;
 	    		break;
 	    	case "exit" :
 	    	case "quit" :
@@ -81,10 +117,8 @@ async function start_interface() {
   	}
    }while(run);
 
+   abort_controller.abort();
    console.log("KTHXBYE")
-   if(server) server.close(_ => process.exit());
-   if(ABORT) ABORT.abort();
-   else process.exit();
 }
 
 // ==================================================== rust build script
@@ -116,8 +150,9 @@ async function build_pkg(verbose, startup){
 }
 
 // ==================================================== http sever
-function start_server(){
-	const serv = http.createServer(async (request, result)=>{
+function start_server(abort_controller) {
+	const {signal} = abort_controller;
+	const server = http.createServer(async (request, result)=>{
 		try{
 			if(request.method == "POST" && request.url == "/generation"){
 			  result.writeHead(200, { 'Content-Type': "text/plain" });
@@ -141,10 +176,22 @@ function start_server(){
 			console.log("wyw ?>");
 		}
 	});
-	serv.listen(port);
-	console.log(`HTTP server listening on port ${port}`);
+	const sockets = new Set();
+	signal.addEventListener('abort', (event) => {
+		console.log("closing server, removing all connections");
+		for (const socket of sockets)
+    	socket.destroy();
+    sockets.clear();
+		server.close(cb=>console.log("server closed"));
+	}
+	, { once: true });
+	server.on('connection', socket =>{
+		sockets.add(socket);
+		socket.once("close", _ => sockets.delete(socket));
+	});
 
-	return serv;
+	server.listen(port);
+	console.log(`HTTP server listening on port ${port}`);
 }
 
 function getActualPath(url){
@@ -179,7 +226,8 @@ function type(path){
 }
 
 // ====================================== misc
-async function start_watch(signal){
+function start_watch(abort_controller) {
+	const {signal} = abort_controller;
 	let start_watcher = (async (folder, callback) => {
 		  	try {
 			    const watcher = fs.watch(folder, { signal });
@@ -201,19 +249,23 @@ function reload_browsers(force){
 	if(autoreload || force)
 		generation++;
 }
-function open_browser(){
-
-   //warning untested except windows
-	const url = "http://localhost:"+port;
-		let command;
-		if (osPlatform === WINDOWS_PLATFORM) {
-		  command = `start ${url}`;
-		} else if (osPlatform === MAC_PLATFORM) {
-		  command = `open -a "Google Chrome" ${url}`;
-		} else {
-		  command = `google-chrome --no-sandbox ${url}`;
-		}
-		exec(command);
+async function open_browser(){
+	return new Promise((resolve, reject)=> {
+	   //warning untested except windows
+		const url = "http://localhost:"+port;
+			let command;
+			if (osPlatform === WINDOWS_PLATFORM) {
+			  command = `start /B ${url}`;
+			} else if (osPlatform === MAC_PLATFORM) {
+			  command = `open -a "Google Chrome" ${url}`;
+			} else {
+			  command = `google-chrome --no-sandbox ${url}`;
+			}
+			exec(command, {}, ()=>{
+				console.log("browser is open");
+				resolve();
+			});
+	});
 }
 // ====================================== utilities
 function debounce(func, time = 100) {

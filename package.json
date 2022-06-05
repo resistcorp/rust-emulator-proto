@@ -7,6 +7,7 @@
     "test": "tests"
   },
   "scripts": {
+    "dev": "node first.js",
     "test": "test"
   },
   "repository": {
