@@ -86,7 +86,7 @@ async function start_interface() {
 // ==================================================== rust build script
 async function build_pkg(verbose, startup){
 	return new Promise((resolve, reject) => {
-		let build = spawn("wasm-pack", ["build", "--target", "web", "--out-dir", "www/pkg", "--out-name", "pkg"]);
+		let build = spawn("wasm-pack", ["build", "--target", "web", "--out-dir", "www/pkg", "--out-name", "emulator"]);
 		if(startup)
 			console.log(`building package. if first time it may be long`);
 

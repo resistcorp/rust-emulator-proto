@@ -1,4 +1,4 @@
-import {default as init, create_emulo, version} from "./emulator/emulator.js";
+import {default as init, create_emulo, version} from "./pkg/emulator.js";
 
 let emulo;
 let screenData;
