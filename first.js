@@ -14,15 +14,14 @@ const rust_src = paths.join("src");
 const js_src = paths.join("www");
 const pkg = paths.join("www", "pkg");
 
-const server = start_server();
-open_browser();
-build_pkg(false, true).then(_=>{
+let autoreload=true;
+let generation = 0;
+
+const server = build_pkg(false, true).then(_=>{
 	open_browser();
 	start_interface();
+	return start_server();
 });
-let autoreload=true;
-
-let generation = 0;
 
 
 // ==================================================== cmd line interface
