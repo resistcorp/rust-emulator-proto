@@ -47,16 +47,17 @@ export function start(){
 }
 export function getState(){
 	let flag_names = ["S","Z","Y","H","X","P","N","C"];
+	let registers = ["A","F","BC","DE","HL","IX","IY","PC","SP","I","R","AFp","BCp","DEp","HLp"];
 	let ret = "";
 	let state = emulo.get_state();
 	let flags = emulo.get_flags();
 	ret += flag_names.map(n => `<span class="flag ${flags[n+"F"]}">${n}</span>`).join(" ") + "\n";
-	for(let [key, val] of Object.getOwnPropertyNames(state.__proto__)
-		.map(k => [k, state[k]])
-		){
-		if(key && key != "ptr" && typeof val != "function")
-			ret += key + " : " + val + "\n";
+	for(let name of registers){
+		let val = state[name];
+		ret += name + " : " + val.toString(16) + "\n";
 	}
+	ret += "interrupt mode : " + state.interrupt_mode + "\n";
+	ret += "interrupt allowed : " + state.interrupt_enabled + "\n";
 	return `<pre>${ret}</pre>`
 }
 
