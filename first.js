@@ -34,6 +34,7 @@ async function start_interface(abort_controller, messaging) {
   const rl = readline.createInterface({
     input: process.stdin,
   	output: process.stdout,
+  	completer : complete_cmds,
   	signal
   });
 
@@ -147,10 +148,11 @@ async function start_interface(abort_controller, messaging) {
 // ==================================================== rust build script
 async function build_pkg(verbose, startup){
 	let time = 0;
+	let length = 22;
 	const id = setInterval(()=>{
-		let len = time++%10
-		process.stdout.write("\r"+"▓".repeat(len)+"░".repeat(10-len));
-	}, 200);
+		let len = time++%length;
+		process.stdout.write("\r"+"▓".repeat(len)+"░".repeat(length-len)+"\r");
+	}, 100);
 	return new Promise((resolve, reject) => {
 		let build = spawn("wasm-pack", ["build", "--target", "web", "--out-dir", "www/pkg", "--out-name", "emulator"]);
 		if(startup)
@@ -168,6 +170,7 @@ async function build_pkg(verbose, startup){
 
 		build.on('close', (code) => {
 			clearInterval(id)
+			process.stdout.write(`\r${" ".repeat(length)}\r`);
 			if(code){
 				console.log("rust code build failed");
 			}else{
@@ -301,6 +304,17 @@ async function open_browser(){
 				resolve();
 			});
 	});
+}
+function complete_cmds(line){
+	const possibilities = [
+		"halp","help",
+		"build","open","reload",
+		"auto on","autoreload on","auto off","autoreload off",
+		"auto","autoreload","exit","quit","kill"
+	];
+	 const hits = possibilities.filter((c) => c.startsWith(line));
+  // Show all possibilities if none found
+  return [hits.length ? hits : possibilities, line];
 }
 // ====================================== utilities
 function debounce(func, time = 100) {
