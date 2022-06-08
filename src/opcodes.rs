@@ -19,7 +19,7 @@ pub fn init_opcodes() -> Opcodes {
     let mut opcodes : Opcodes = Opcodes{data : Vec::with_capacity(256)};
     for i in 0..=255 {
         let i = i;
-        opcodes.data.push(Box::new(move |_s : &mut EmulatorState| panic!("opcode {:X} not implemented", i)));
+        opcodes.data.push(Box::new(move |_s| panic!("opcode {:X} not implemented", i)));
     }
     let mut defs = Vec::with_capacity(256);
     for def in OP_DATA.lines(){
@@ -74,7 +74,7 @@ fn compute_opcode_table(opcodes : &mut Opcodes, definitions : Vec<OpcodeDef>, re
                 for i in 0..=255 {
                     let i = i;
                     let start = start.clone();
-                    sub_codes.data.push(Box::new(move |_s : &mut EmulatorState| panic!("opcode {:?} {:X} not implemented", start, i)));
+                    sub_codes.data.push(Box::new(move |_s| panic!("opcode {:?} {:X} not implemented", start, i)));
                 }
                 let is_FDCB = recursion_depth == 1 && (start == "[\"FD\", \"CB\"]" || start == "[\"DD\", \"CB\"]");
                 let next_depth = if is_FDCB { recursion_depth+2 } else { recursion_depth+1 };
@@ -87,7 +87,7 @@ fn compute_opcode_table(opcodes : &mut Opcodes, definitions : Vec<OpcodeDef>, re
                 count_parsed += parsed;
                 opcodes[base] = Box::new(move |s| {
                     if is_FDCB {
-                        s.next_offset = Some(s.o())
+                        s.state.next_offset = Some(s.o())
                     }
                     let code = s.next();
                     sub_codes[code](s)
@@ -117,17 +117,17 @@ impl Index<u8> for Opcodes{
 }
 
 //an operation mutates the state and returns a number of cycles
-type Operation = Box<dyn Fn(&mut EmulatorState) -> u8>;
-trait OpRead8 : Fn(&mut EmulatorState) -> u8 {}
-trait OpRead16 : Fn(&mut EmulatorState) -> u16 {}
-trait OpWrite8 : Fn(&mut EmulatorState, u8) -> () {}
-trait OpWrite16 : Fn(&mut EmulatorState, u16) -> () {}
-trait OpMut : Fn(&mut EmulatorState) -> () {}
-impl<T : Fn(&mut EmulatorState) -> u8>  OpRead8 for T {}
-impl<T : Fn(&mut EmulatorState) -> u16>  OpRead16 for T {}
-impl<T : Fn(&mut EmulatorState, u8) -> ()>  OpWrite8 for T {}
-impl<T : Fn(&mut EmulatorState, u16) -> ()>  OpWrite16 for T {}
-impl<T : Fn(&mut EmulatorState) -> ()>  OpMut for T {}
+type Operation = Box<dyn Fn(&mut Emulator) -> u8>;
+trait OpRead8 : Fn(&mut Emulator) -> u8 {}
+trait OpRead16 : Fn(&mut Emulator) -> u16 {}
+trait OpWrite8 : Fn(&mut Emulator, u8) -> () {}
+trait OpWrite16 : Fn(&mut Emulator, u16) -> () {}
+trait OpMut : Fn(&mut Emulator) -> () {}
+impl<T : Fn(&mut Emulator) -> u8>  OpRead8 for T {}
+impl<T : Fn(&mut Emulator) -> u16>  OpRead16 for T {}
+impl<T : Fn(&mut Emulator, u8) -> ()>  OpWrite8 for T {}
+impl<T : Fn(&mut Emulator, u16) -> ()>  OpWrite16 for T {}
+impl<T : Fn(&mut Emulator) -> ()>  OpMut for T {}
 
 enum Reader{
     NoneR(String),
@@ -210,10 +210,10 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
         NOP => Some(Box::new(|_s| {})),
         //Interrupts
         EI => Some(Box::new(|s| {
-            s.interrupts_enabled = true;
+            s.state.interrupts_enabled = true;
         })),
         DI => Some(Box::new(|s| {
-            s.interrupts_enabled = false;
+            s.state.interrupts_enabled = false;
         })),
         IM =>{
             assert_eq!(1, val.len());
@@ -221,7 +221,7 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
 
             Some(Box::new(move |s| {
                 assert_eq!(1, mode, "Master system only allows IM mode 1");
-                s.interrupt_mode = mode;
+                s.state.interrupt_mode = mode;
             }))
         },
         RET | RETI | RETN =>{//TODO find difference, depending on interrupt
@@ -233,7 +233,7 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             };
             Some(Box::new(move |s| {
                 if cnd(s) {
-                    s.PC = s.stack_pop();
+                    s.state.PC = s.stack_pop();
                 }
             }))
         },
@@ -241,10 +241,10 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             assert_eq!(1, val.len());
             let imm = u16::from_str_radix(val[0], 16).expect("RST only exists with an immediate value");
             Some(Box::new(move |s| {
-                s.SP += 1;
+                s.state.SP += 1;
                 //this +3 is dodgy to me, should be +1
-                s.stack_push(s.PC+3);
-                s.PC = imm;
+                s.stack_push(s.state.PC+3);
+                s.state.PC = imm;
             }))
         },
         // bitwise
@@ -259,8 +259,8 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             assert_eq!(2, pos.len());
             let (reader_l, writer) = match pos[0] {
                 "A" => (
-                    R8(Box::new(|s| s.A)),
-                    W8(Box::new(|s, v| s.A = v))
+                    R8(Box::new(|s| s.state.A)),
+                    W8(Box::new(|s, v| s.state.A = v))
                 ),
                 reg => (make_reader(reg), make_writer(reg))
             };
@@ -314,9 +314,9 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
                         _ => unreachable!()
                     };
                     Some(Box::new(move |s| {
-                                        let (val, _carry) = arithmetic(s.A, r(s));
+                                        let (val, _carry) = arithmetic(s.state.A, r(s));
                                         if op != CP {
-                                            s.A = val;
+                                            s.state.A = val;
                                         }
                                         s.flags_set_to(EmulatorFlags::Z, val == 0);
                                         if op == SUB {
@@ -334,9 +334,9 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
 
         NEG =>{
             Some(Box::new(|s| {
-                let signed = -(s.A as i8);
+                let signed = -(s.state.A as i8);
 
-                s.A = signed as u8;
+                s.state.A = signed as u8;
                 s.flags_set(EmulatorFlags::N);
                 s.flags_set_to(EmulatorFlags::Z, signed == 0);
                 s.flags_set_to(EmulatorFlags::S, signed < 0);
@@ -353,7 +353,7 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
         },
         CPL =>{
             Some(Box::new(|s| {
-                s.A ^= 0xFF;
+                s.state.A ^= 0xFF;
                 s.flags_set(EmulatorFlags::HN);
             }))
         },
@@ -372,27 +372,27 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             //whose 4 most signigifcant bits are the 4 least significant bits of A,
             //and its 8 least significant bits are in (HL).
             Some(Box::new(move |s| {
-                let v = s.mem_read(s.HL);
-                let h = s.A & 0xF;
+                let v = s.mem_read(s.state.HL);
+                let h = s.state.A & 0xF;
                 let m = v & 0xF0 >> 4;
                 let l = v & 0x0f >> 0;
 
                 if is_left {
                     //TODO
-                    s.A &= 0x0F;
-                    s.A |= m;
-                    s.mem_write(s.HL, l<<4 | h);
-                    s.flags_set_to(EmulatorFlags::S, s.A & 0x80 != 0);
+                    s.state.A &= 0x0F;
+                    s.state.A |= m;
+                    s.mem_write(s.state.HL, l<<4 | h);
+                    s.flags_set_to(EmulatorFlags::S, s.state.A & 0x80 != 0);
 
                 }else{
-                    s.A &= 0x0F;
-                    s.A |= m;
-                    s.mem_write(s.HL, l<<4 | h);
-                    s.flags_set_to(EmulatorFlags::S, s.A & 0x80 != 0);
+                    s.state.A &= 0x0F;
+                    s.state.A |= m;
+                    s.mem_write(s.state.HL, l<<4 | h);
+                    s.flags_set_to(EmulatorFlags::S, s.state.A & 0x80 != 0);
                 }
 
-                s.flags_set_to(EmulatorFlags::Z, s.A == 0);
-                s.flags_set_to(EmulatorFlags::P, is_even_bits(s.A));
+                s.flags_set_to(EmulatorFlags::Z, s.state.A == 0);
+                s.flags_set_to(EmulatorFlags::P, is_even_bits(s.state.A));
                 s.flags_unset(EmulatorFlags::HN);
             }))
         },
@@ -491,22 +491,22 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
         OUTD | OUTI | INI | IND => {
             let is_in = op == INI ||op == IND;
             Some(Box::new(move |s| {
-                let port =  low_byte(s.BC);
+                let port =  low_byte(s.state.BC);
                 if is_in {
                     let val = s.port_read(port);
-                    s.mem_write(s.HL, val);
+                    s.mem_write(s.state.HL, val);
                 }else{
-                    let val = s.mem_read(s.HL);
+                    let val = s.mem_read(s.state.HL);
                     s.port_write(port, val);
                 }
                 if op == OUTD {
-                    s.HL -= 1;
+                    s.state.HL -= 1;
                 }else{
-                    s.HL += 1;
+                    s.state.HL += 1;
                 }
-                let b = high_byte(s.BC);
-                set_high_byte(&mut s.BC, b -1);
-                s.flags_set_to(EmulatorFlags::Z, high_byte(s.BC) == 0);
+                let b = high_byte(s.state.BC);
+                set_high_byte(&mut s.state.BC, b -1);
+                s.flags_set_to(EmulatorFlags::Z, high_byte(s.state.BC) == 0);
                 s.flags_set(EmulatorFlags::N)
             }))
         },
@@ -517,8 +517,8 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             let port = pos[1];
             assert!(port == "(n)" || port == "(C)");
             let get_port = match port {
-                "(n)" => |s: &mut EmulatorState| s.next(),
-                "(C)" => |s: &mut EmulatorState| low_byte(s.BC),
+                "(n)" => |s : &mut Emulator| s.next(),
+                "(C)" => |s : &mut Emulator| low_byte(s.state.BC),
                 _ => unreachable!()
             };
             if let W8(w) = make_writer(pos[0]) {
@@ -538,8 +538,8 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             let port = pos[0];
             assert!(port == "(n)" || port == "(C)");
             let get_port = match port {
-                "(n)" => |s: &mut EmulatorState| s.next(),
-                "(C)" => |s: &mut EmulatorState| low_byte(s.BC),
+                "(n)" => |s : &mut Emulator| s.next(),
+                "(C)" => |s : &mut Emulator| low_byte(s.state.BC),
                 _ => unreachable!()
             };
             if let R8(r) = make_reader(pos[1]) {
@@ -642,7 +642,7 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             let val = val[0];
             let condition = if op == DJNZ {
                 assert_eq!("o", val);
-                Box::new(|s : &mut EmulatorState| s.dec_b_is_zero())
+                Box::new(|s: &mut Emulator| s.dec_b_is_zero())
             }else if val.contains(",") {
                 let v : Vec<_> = val.split(",").collect();
                 assert_eq!("o", v[1]);
@@ -653,8 +653,8 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             };
             Some(Box::new(move |s| {
                 if condition(s) {
-                    let new_val = s.PC as i32 + s.o() as i32;
-                    s.PC = new_val as u16;//this may overflow.
+                    let new_val = s.state.PC as i32 + s.o() as i32;
+                    s.state.PC = new_val as u16;//this may overflow.
                 }
             }))
         },
@@ -689,7 +689,7 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             let op_loop = if op == CPIR {CPI} else {CPD};
             let cp = make_standalone(op_loop, &vec![]).unwrap();
             Some(Box::new(move |s| {
-                while s.A != s.mem_read(s.HL) && s.BC != 0 {
+                while s.state.A != s.mem_read(s.state.HL) && s.state.BC != 0 {
                     cp(s);
                 }
                 //flags are same as CPx
@@ -709,14 +709,14 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
                 s.flags_unset(EmulatorFlags::N);//N is reset
                 s.flags_unset(EmulatorFlags::H);//H is reset
                 //P/V is set if BC – 1 ≠ 0; otherwise, it is reset
-                s.flags_set_to(EmulatorFlags::P, s.BC != 1);
+                s.flags_set_to(EmulatorFlags::P, s.state.BC != 1);
             }))//
         },
         LDDR | LDIR => {
             let op_loop = if op == LDIR {LDI} else {LDD};
             let ld = make_standalone(op_loop, &vec![]).unwrap();
             Some(Box::new(move |s| {
-                while s.BC != 0 {
+                while s.state.BC != 0 {
                     ld(s);
                 }
                 //flags are same as LDx
@@ -732,7 +732,7 @@ fn make_standalone(op: Instructions, val : &[&str]) -> Option<Box<dyn OpMut>>{
             };
             let the_op = make_standalone(op_loop, &vec![]).unwrap();
             Some(Box::new(move |s| {
-                while high_byte(s.BC) != 0 {
+                while high_byte(s.state.BC) != 0 {
                     the_op(s);
                 }
                 //Z is set, C is reset, N is reset, S, H, and P/V are undefined.
@@ -788,9 +788,9 @@ fn make_jump(val : &str, and_stack : bool) -> Option<Box<dyn OpMut>>{
                 if condition(s) {
                     let v = r(s);
                     if and_stack {
-                        s.stack_push(s.PC + 3);
+                        s.stack_push(s.state.PC + 3);
                     }
-                    s.PC = v;
+                    s.state.PC = v;
                 }
             })),
         _ => None
@@ -820,7 +820,7 @@ fn make_load(val : &str) -> Option<Box<dyn OpMut>>{
                                  }))
         // },
         // (R8(r), W16(w)) => {
-        //     Some(Box::new(move |s : &mut EmulatorState| {
+        //     Some(Box::new(move |s| {
         //                              let v = r(s) as u16;
         //                              w(s, v);//TODO: should this write one or two bytes
         //                          }))
@@ -831,7 +831,7 @@ fn make_load(val : &str) -> Option<Box<dyn OpMut>>{
         }
     }
 }
-fn make_condition(s : &str) -> Box<dyn Fn(&mut EmulatorState) -> bool> {
+fn make_condition(s : &str) -> Box<dyn Fn(&mut Emulator) -> bool> {
     match s {
         "Z" =>Box::new(|s|s.flags().ZF),
         "NZ" =>Box::new(|s|!s.flags().ZF),
@@ -851,114 +851,114 @@ fn make_reader(s : &str) -> Reader{
         //"o" => R8(Box::new(|s| s.o() )),
         "N"|"n" => R8(Box::new(|s| s.next() )),
         "NN"|"nn" => R16(Box::new(|s| s.nn() )),
-        "A" => R8(Box::new(|s| s.A )),
-        "F" => R8(Box::new(|s| s.F )),
-        "B" => R8(Box::new(|s| high_byte(s.BC)  )),
-        "C" => R8(Box::new(|s| low_byte(s.BC) )),
-        "D" => R8(Box::new(|s| high_byte(s.DE)  )),
-        "E" => R8(Box::new(|s| low_byte(s.DE) )),
-        "H" => R8(Box::new(|s| high_byte(s.HL)  )),
-        "L" => R8(Box::new(|s| low_byte(s.HL) )),
-        "I" => R8(Box::new(|s| s.I )),
-        "R" => R8(Box::new(|s| s.R )),
-        "IXH" => R8(Box::new(|s| high_byte(s.IX) )),
-        "IXL" => R8(Box::new(|s| low_byte(s.IX))),
-        "IYH" => R8(Box::new(|s| high_byte(s.IY) )),
-        "IYL" => R8(Box::new(|s| low_byte(s.IY))),
-        "AF" => R16(Box::new(|s| to_u16(s.A, s.F))),
-        "AF'" => R16(Box::new(|s| s.AFp)),
-        "BC" => R16(Box::new(|s| s.BC)),
-        "DE" => R16(Box::new(|s| s.DE)),
-        "HL" => R16(Box::new(|s| s.HL)),
-        "SP" => R16(Box::new(|s| s.SP)),
-        "IX" => R16(Box::new(|s| s.IX)),
-        "IY" => R16(Box::new(|s| s.IY)),
-        "(SP)" => R16(Box::new(|s| s.mem_read16(s.SP))),
+        "A" => R8(Box::new(|s| s.state.A )),
+        "F" => R8(Box::new(|s| s.state.F )),
+        "B" => R8(Box::new(|s| high_byte(s.state.BC)  )),
+        "C" => R8(Box::new(|s| low_byte(s.state.BC) )),
+        "D" => R8(Box::new(|s| high_byte(s.state.DE)  )),
+        "E" => R8(Box::new(|s| low_byte(s.state.DE) )),
+        "H" => R8(Box::new(|s| high_byte(s.state.HL)  )),
+        "L" => R8(Box::new(|s| low_byte(s.state.HL) )),
+        "I" => R8(Box::new(|s| s.state.I )),
+        "R" => R8(Box::new(|s| s.state.R )),
+        "IXH" => R8(Box::new(|s| high_byte(s.state.IX) )),
+        "IXL" => R8(Box::new(|s| low_byte(s.state.IX))),
+        "IYH" => R8(Box::new(|s| high_byte(s.state.IY) )),
+        "IYL" => R8(Box::new(|s| low_byte(s.state.IY))),
+        "AF" => R16(Box::new(|s| to_u16(s.state.A, s.state.F))),
+        "AF'" => R16(Box::new(|s| s.state.AFp)),
+        "BC" => R16(Box::new(|s| s.state.BC)),
+        "DE" => R16(Box::new(|s| s.state.DE)),
+        "HL" => R16(Box::new(|s| s.state.HL)),
+        "SP" => R16(Box::new(|s| s.state.SP)),
+        "IX" => R16(Box::new(|s| s.state.IX)),
+        "IY" => R16(Box::new(|s| s.state.IY)),
+        "(SP)" => R16(Box::new(|s| s.mem_read16(s.state.SP))),
         "(BC)" => EitherR((
-            Box::new(|s| s.mem_read(s.BC)),
-            Box::new(|s| s.mem_read16(s.BC)))
+            Box::new(|s| s.mem_read(s.state.BC)),
+            Box::new(|s| s.mem_read16(s.state.BC)))
         ),//TODO: should these return 16 bits ?
         "(DE)" => EitherR((
-            Box::new(|s| s.mem_read(s.DE)),
-            Box::new(|s| s.mem_read16(s.DE)))
+            Box::new(|s| s.mem_read(s.state.DE)),
+            Box::new(|s| s.mem_read16(s.state.DE)))
             ),
         "(HL)" => EitherR((
-            Box::new(|s| s.mem_read(s.HL)),
-            Box::new(|s| s.mem_read16(s.HL)))
+            Box::new(|s| s.mem_read(s.state.HL)),
+            Box::new(|s| s.mem_read16(s.state.HL)))
             ),
         "(IX+N)" => EitherR((
             Box::new(|s|{
                 let o = s.next() as u16;
-                s.mem_read(s.IX + o)
+                s.mem_read(s.state.IX + o)
             }),
             Box::new(|s|{
                 let o = s.next() as u16;
-                s.mem_read16(s.IX + o)
+                s.mem_read16(s.state.IX + o)
             }))
         ),
         "(IY+N)" => EitherR((
             Box::new(|s|{
                 let o = s.next() as u16;
-                s.mem_read(s.IY + o )
+                s.mem_read(s.state.IY + o )
             }),
             Box::new(|s|{
                 let o = s.next() as u16;
-                s.mem_read16(s.IY + o )
+                s.mem_read16(s.state.IY + o )
             }))
         ),
         "(IX)" => EitherR(
             (Box::new(|s|{
-                s.mem_read(s.IX)
+                s.mem_read(s.state.IX)
             }),
             Box::new(|s|{
-                s.mem_read(s.IX) as u16
+                s.mem_read(s.state.IX) as u16
             }))
         ),
         "(IX+o)" => R8(
             Box::new(|s|{
-                let o = s.IX as i16 + s.next_offset.unwrap() as i16;
+                let o = s.state.IX as i16 + s.state.next_offset.unwrap() as i16;
                 s.mem_read(o as u16)//FIXME possible overflow disregarded here
             })
         ),
         "(IY)" => EitherR(
             (Box::new(|s|{
-                s.mem_read(s.IY)
+                s.mem_read(s.state.IY)
             }),
             Box::new(|s|{
-                s.mem_read(s.IY) as u16
+                s.mem_read(s.state.IY) as u16
             }))
         ),
         "(IY+o)" => R8(
             Box::new(|s|{
-                let o = s.IY as i16 + s.next_offset.unwrap() as i16;
+                let o = s.state.IY as i16 + s.state.next_offset.unwrap() as i16;
                 s.mem_read(o as u16)//FIXME possible overflow disregarded here
             })
         ),
         "IXh" => R8(
             Box::new(|s|{
                 let mut h = 0;
-                split_u16(s.IX, &mut h, &mut 0);
+                split_u16(s.state.IX, &mut h, &mut 0);
                 h
             }),
         ),
         "IXl" => R8(
             Box::new(|s|{
                 let mut h = 0;
-                split_u16(s.IX, &mut 0, &mut h);
+                split_u16(s.state.IX, &mut 0, &mut h);
                 h
             }),
         ),
         "IYh" => R8(
             Box::new(|s|{
                 let mut h = 0;
-                split_u16(s.IY, &mut h, &mut 0);
+                split_u16(s.state.IY, &mut h, &mut 0);
                 h
             }),
         ),
         "IYl" => R8(
             Box::new(|s|{
                 let mut h = 0;
-                split_u16(s.IY, &mut 0, &mut h);
+                split_u16(s.state.IY, &mut 0, &mut h);
                 h
             }),
         ),
@@ -979,70 +979,70 @@ fn make_reader(s : &str) -> Reader{
 fn make_writer(s : &str) -> Writer{
     use Writer::*;
     match s {
-        "A" => W8(Box::new(|s, v| s.A = v)),
-        "F" => W8(Box::new(|s, v| s.F = v)),
-        "B" => W8(Box::new(|s, v| set_high_byte(&mut s.BC, v))),
-        "C" => W8(Box::new(|s, v|  set_low_byte(&mut s.BC, v))),
-        "D" => W8(Box::new(|s, v| set_high_byte(&mut s.DE, v))),
-        "E" => W8(Box::new(|s, v|  set_low_byte(&mut s.DE, v))),
-        "H" => W8(Box::new(|s, v| set_high_byte(&mut s.HL, v))),
-        "L" => W8(Box::new(|s, v|  set_low_byte(&mut s.HL, v))),
-        "I" => W8(Box::new(|s, v| s.I = v )),
-        "R" => W8(Box::new(|s, v| s.R = v )),
-        "IXh" => W8(Box::new(|s, v| set_high_byte(&mut s.IX, v))),
-        "IXl" => W8(Box::new(|s, v|  set_low_byte(&mut s.IX, v))),
-        "IYh" => W8(Box::new(|s, v| set_high_byte(&mut s.IY, v))),
-        "IYl" => W8(Box::new(|s, v|  set_low_byte(&mut s.IY, v))),
-        "AF" => W16(Box::new(|s, v| split_u16(v, &mut s.A, &mut s.F))),
-        "AF'" => W16(Box::new(|s, v| s.AFp = v)),
-        "BC" => W16(Box::new(|s, v| s.BC = v)),
-        "DE" => W16(Box::new(|s, v| s.DE = v)),
-        "HL" => W16(Box::new(|s, v| s.HL = v)),
-        "SP" => W16(Box::new(|s, v| s.SP = v)),
-        "IX" => W16(Box::new(|s, v| s.IX = v)),
-        "IY" => W16(Box::new(|s, v| s.IY = v)),
-        "(SP)" => W16(Box::new(|s, v| s.mem_write16(s.SP, v))),
+        "A" => W8(Box::new(|s, v| s.state.A = v)),
+        "F" => W8(Box::new(|s, v| s.state.F = v)),
+        "B" => W8(Box::new(|s, v| set_high_byte(&mut s.state.BC, v))),
+        "C" => W8(Box::new(|s, v|  set_low_byte(&mut s.state.BC, v))),
+        "D" => W8(Box::new(|s, v| set_high_byte(&mut s.state.DE, v))),
+        "E" => W8(Box::new(|s, v|  set_low_byte(&mut s.state.DE, v))),
+        "H" => W8(Box::new(|s, v| set_high_byte(&mut s.state.HL, v))),
+        "L" => W8(Box::new(|s, v|  set_low_byte(&mut s.state.HL, v))),
+        "I" => W8(Box::new(|s, v| s.state.I = v )),
+        "R" => W8(Box::new(|s, v| s.state.R = v )),
+        "IXh" => W8(Box::new(|s, v| set_high_byte(&mut s.state.IX, v))),
+        "IXl" => W8(Box::new(|s, v|  set_low_byte(&mut s.state.IX, v))),
+        "IYh" => W8(Box::new(|s, v| set_high_byte(&mut s.state.IY, v))),
+        "IYl" => W8(Box::new(|s, v|  set_low_byte(&mut s.state.IY, v))),
+        "AF" => W16(Box::new(|s, v| split_u16(v, &mut s.state.A, &mut s.state.F))),
+        "AF'" => W16(Box::new(|s, v| s.state.AFp = v)),
+        "BC" => W16(Box::new(|s, v| s.state.BC = v)),
+        "DE" => W16(Box::new(|s, v| s.state.DE = v)),
+        "HL" => W16(Box::new(|s, v| s.state.HL = v)),
+        "SP" => W16(Box::new(|s, v| s.state.SP = v)),
+        "IX" => W16(Box::new(|s, v| s.state.IX = v)),
+        "IY" => W16(Box::new(|s, v| s.state.IY = v)),
+        "(SP)" => W16(Box::new(|s, v| s.mem_write16(s.state.SP, v))),
         "(BC)" => EitherW((
-            Box::new(|s, v| s.mem_write(s.BC, v)),
-            Box::new(|s, v| s.mem_write16(s.BC, v)))
+            Box::new(|s, v| s.mem_write(s.state.BC, v)),
+            Box::new(|s, v| s.mem_write16(s.state.BC, v)))
         ),
         "(DE)" => EitherW((
-            Box::new(|s, v| s.mem_write(s.DE, v)),
-            Box::new(|s, v| s.mem_write16(s.DE, v)))
+            Box::new(|s, v| s.mem_write(s.state.DE, v)),
+            Box::new(|s, v| s.mem_write16(s.state.DE, v)))
         ),
         "(HL)" => EitherW((
-            Box::new(|s, v| s.mem_write(s.HL, v)),
-            Box::new(|s, v| s.mem_write16(s.HL, v)))
+            Box::new(|s, v| s.mem_write(s.state.HL, v)),
+            Box::new(|s, v| s.mem_write16(s.state.HL, v)))
         ),
         "(IX+N)" => EitherW((
             Box::new(|s, v|{
                 let o = s.next();
-                s.mem_write(s.IX + o as u16, v);
+                s.mem_write(s.state.IX + o as u16, v);
             }),
             Box::new(|s, v|{
                 let o = s.next();
-                s.mem_write16(s.IX + o as u16, v);
+                s.mem_write16(s.state.IX + o as u16, v);
             }))
         ),
         "(IX+o)" => W8(
             Box::new(|s, v|{
-                let o = s.IX as i16 + s.next_offset.unwrap() as i16;
+                let o = s.state.IX as i16 + s.state.next_offset.unwrap() as i16;
                 s.mem_write(o as u16, v)//FIXME possible overflow disregarded here
             })
         ),
         "(IY+N)" => EitherW((
             Box::new(|s, v|{
                 let o = s.next();
-                s.mem_write(s.IY + o as u16, v);
+                s.mem_write(s.state.IY + o as u16, v);
             }),
             Box::new(|s, v|{
                 let o = s.next();
-                s.mem_write16(s.IY + o as u16, v);
+                s.mem_write16(s.state.IY + o as u16, v);
             }))
         ),
         "(IY+o)" => W8(
             Box::new(|s, v|{
-                let o = s.IY as i16 + s.next_offset.unwrap() as i16;
+                let o = s.state.IY as i16 + s.state.next_offset.unwrap() as i16;
                 s.mem_write(o as u16, v)//FIXME possible overflow disregarded here
             })
         ),
