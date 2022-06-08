@@ -43,7 +43,7 @@ pub struct Emulator{
 #[wasm_bindgen]
 pub struct Emu {
     emulator : Emulator,
-    opcodes:Opcodes
+    opcodes : Opcodes
 }
 
 #[wasm_bindgen]
@@ -63,9 +63,25 @@ impl Emu{
     pub fn get_flags(&mut self) -> EmulatorFlags{
         self.emulator.get_flags()
     }
-    pub fn tick(&mut self, time : f64){
-        self.emulator.tick(time, &self.opcodes);
+    pub fn clock(&mut self){
+        self.emulator.clock(&self.opcodes);
     }
+    pub fn tick(&mut self, time : f64) -> f64{
+        self.emulator.tick(time, &self.opcodes)
+    }
+
+    pub fn take(&mut self) -> Vec<u8>{
+        self.emulator.take()
+    }
+    
+    pub fn swap(&mut self, give : Vec<u8>) -> Vec<u8>{
+        self.emulator.buffers.push_front(give);
+        self.take()
+    }
+    pub fn size(&mut self) -> Size {
+        self.emulator.size
+    }
+
 }
 
 impl Emulator{

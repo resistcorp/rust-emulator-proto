@@ -9,8 +9,8 @@ async function startup(){
 	emulo = create_emulo();
 	screenData = emulo.take();
 	console.log(version());
-	screen.width = emulo.size.width;
-	screen.height = emulo.size.height;
+	screen.width = emulo.size().width;
+	screen.height = emulo.size().height;
 
 	getMemory()
 	frame(0.0)
