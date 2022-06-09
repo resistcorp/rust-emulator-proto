@@ -17,7 +17,7 @@ async function startup(){
 }
 
 function frame(time){
-	let delta = emulo.tick(time);
+	let delta = emulo.advance(time);
 	if(delta > 1000/60){
 		screenData = emulo.swap(screenData);
 		let data = new ImageData(new Uint8ClampedArray(screenData.buffer), screen.width, screen.height);
@@ -29,7 +29,8 @@ function frame(time){
 export function getMemory(){
 	let buff = new Uint8Array(256);
 	let pos = emulo.mem_around_pc(buff);
-	// console.log("we are at position", pos)
+	console.log("we are at position", pos)
+	console.log("next op is", emulo.next_op())
 	// console.log("current memory is", [...buff].map(i => "0x" + i.toString(16)))
 	getState()
 	document.getElementById("state").innerHTML = getState()

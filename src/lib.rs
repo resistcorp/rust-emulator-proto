@@ -74,6 +74,11 @@ impl Emu{
         self.emulator.take()
     }
     
+    pub fn next_op(&mut self) -> String {
+        let idx = self.emulator.mem_read(self.emulator.state.PC);
+        self.opcodes[idx].describe(&self.emulator, self.emulator.state.PC)
+    }
+    
     pub fn swap(&mut self, give : Vec<u8>) -> Vec<u8>{
         self.emulator.buffers.push_front(give);
         self.take()
@@ -93,7 +98,7 @@ impl Emulator{
         buffers.push_front(vec![0u8; width * height * 4]);
         buffers[1][1] = 100;
         buffers[2][1] = 200;
-        let mut ports = (0..0xFF).map(Port::new).collect::<Vec<_>>();
+        let ports = (0..0xFF).map(Port::new).collect::<Vec<_>>();
         let vdp = VDP::new();
 
         let size = Size{width, height};
@@ -105,9 +110,8 @@ impl Emulator{
     fn start(&mut self) {
         self.running = true;
     }
-    fn clock(&mut self, opcodes : &Opcodes) -> u16 {
-        opcodes[self.next()](self);
-        self.state.PC
+    fn clock(&mut self, opcodes : &Opcodes) -> usize {
+        opcodes[self.next()].operate(self)
     }
 
     fn mem_around_pc(&mut self, buffer : &mut[u8]) -> usize {
@@ -134,18 +138,18 @@ impl Emulator{
     }
     
     fn advance(&mut self, time : f64, opcodes : &Opcodes) -> f64{
-        let cycletime = 1f64/4_000f64;
+        let cycletime = 4_000f64;
         let delta = time - self.time;
-        let cycles = (delta * cycletime) as usize;
-        println!("delta {:?}", delta);
+        self.time = time;
+        let mut cycles = (delta * cycletime) as usize;
         if self.running {
-            for _ in 0..cycles{
-                self.clock(opcodes);
+            console::log_1(&format!("advancing {cycles} cycles for {delta} seconds").into());
+            while cycles > 0{
+                cycles -= self.clock(opcodes);
             }
         }
         if self.running && delta >= 1000./60.{
             let mut buf = self.take();
-            self.time = time;
             let value = 0.5 + (self.time / 1000.0).sin() * 0.5;
             for y in 0..self.size.height{
                 let row = y * self.size.width;
@@ -180,7 +184,7 @@ impl Emulator{
         let old = self.ports[addr as usize].write(v);
         self.vdp.on_write(addr, old, v);
     }
-    fn port_read(&self, addr : u8) -> u8 {
+    fn port_read(&mut self, addr : u8) -> u8 {
         let v = self.ports[addr as usize].read();
         self.vdp.on_read(addr, v);
         v
@@ -585,16 +589,17 @@ impl VDP{
         }
     }
     fn write_ctrl(&mut self, _before : u8, after:u8){
-        console::log_1(&format!("VDP control port was written to {_before} → {after}").into())
+        // console::log_1(&format!("VDP control port was written to {_before} → {after}").into())
     }
     fn read_ctrl(&mut self, value:u8){
-        console::log_1(&format!("VDP control port was read to {value}").into())
+        // console::log_1(&format!("VDP control port was read to {value}").into())
     }
 }
 impl PortReadListener for VDP {
     fn on_read(&mut self, port : u8, val : u8){
         match port {
             VDP_CONTROL => self.read_ctrl(val),
+            _ => ()
         }
     }
 }
@@ -603,6 +608,7 @@ impl PortWriteListener for VDP {
     fn on_write(&mut self, port : u8, old_val : u8, new_val : u8){
         match port {
             VDP_CONTROL => self.write_ctrl(old_val, new_val),
+            _ => ()
         }
     }
 }

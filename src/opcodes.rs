@@ -12,33 +12,33 @@ type Result<T> = std::result::Result<T, String>;
 const OP_DATA: &str = include_str!("instructions.csv");
 
 pub struct Opcodes{
-    data : Vec<Operation>
+    data : Vec<Op>
 }
 
 pub fn init_opcodes() -> Opcodes {
     let mut opcodes : Opcodes = Opcodes{data : Vec::with_capacity(256)};
     for i in 0..=255 {
         let i = i;
-        opcodes.data.push(Box::new(move |_s| panic!("opcode {:X} not implemented", i)));
+        opcodes.data.push(Op::Invalid(i));
     }
     let mut defs = Vec::with_capacity(256);
     for def in OP_DATA.lines(){
         let parts : Vec<_> = def.split(";").collect();
-        let codes : Vec<_> = parts[0].split_whitespace().collect();
+        let codes : Vec<_> = parts[0].split_whitespace().map(str::to_string).collect();
         let size : u16 = parts[1].parse().unwrap();
         assert_eq!(size as usize, codes.len());
-        let op = parts[2];
-        let cycles : u8 = parts[3].split("/").next().unwrap().parse().unwrap();
+        let op = parts[2].to_string();
+        let cycles : usize = parts[3].split("/").next().unwrap().parse().unwrap();
         let def = OpcodeDef{op, codes, cycles};
         defs.push(def);
     }
-    compute_opcode_table(&mut opcodes, defs, 0);
+    compute_opcode_table(&mut opcodes, defs.iter().collect(), 0);
     opcodes
 }
-fn compute_opcode_table(opcodes : &mut Opcodes, definitions : Vec<OpcodeDef>, recursion_depth : usize) -> (usize, usize) {
-    let mut def_map : HashMap<&str, Vec<OpcodeDef>> = HashMap::new();
-    for def in definitions {
-        def_map.entry(def.codes[recursion_depth]).or_insert_with(Vec::new).push(def);
+fn compute_opcode_table(opcodes : &mut Opcodes, definitions : Vec<&OpcodeDef>, recursion_depth : usize) -> (usize, usize) {
+    let mut def_map : HashMap<&str, Vec<&OpcodeDef>> = HashMap::new();
+    for def in &definitions {
+        def_map.entry(&def.codes[recursion_depth]).or_insert_with(Vec::new).push(def);
     }
     let indent = (0..recursion_depth).map(|_| "..").collect::<String>();
     let mut count_parsed : usize = 0;
@@ -74,7 +74,7 @@ fn compute_opcode_table(opcodes : &mut Opcodes, definitions : Vec<OpcodeDef>, re
                 for i in 0..=255 {
                     let i = i;
                     let start = start.clone();
-                    sub_codes.data.push(Box::new(move |_s| panic!("opcode {:?} {:X} not implemented", start, i)));
+                    sub_codes.data.push(Op::Invalid(i));
                 }
                 let is_FDCB = recursion_depth == 1 && (start == "[\"FD\", \"CB\"]" || start == "[\"DD\", \"CB\"]");
                 let next_depth = if is_FDCB { recursion_depth+2 } else { recursion_depth+1 };
@@ -85,12 +85,8 @@ fn compute_opcode_table(opcodes : &mut Opcodes, definitions : Vec<OpcodeDef>, re
                 let (todo, parsed) = compute_opcode_table(&mut sub_codes, def, next_depth);
                 total += todo;
                 count_parsed += parsed;
-                opcodes[base] = Box::new(move |s| {
-                    if is_FDCB {
-                        s.state.next_offset = Some(s.o())
-                    }
-                    let code = s.next();
-                    sub_codes[code](s)
+                opcodes[base] = Op::Multi(OperationMulti{
+                    opcodes : sub_codes, is_FDCB
                 });
                 console::log_1(&format!("{} parsed {} opcodes starting with {}",indent, size, key).into());
             }else{
@@ -110,14 +106,75 @@ impl IndexMut<u8> for Opcodes{
     }
 }
 impl Index<u8> for Opcodes{
-    type Output = Operation;
+    type Output = Op;
     fn index(&self, idx: u8) -> &Self::Output { 
         &self.data[idx as usize]
     }
 }
 
+#[derive(Clone, Copy)]
+enum OpByte {Actual(u8), O, N, NN}
+
+impl OpByte{
+    fn describe(&self, byte : u8) -> String {
+        use OpByte::*;
+        match self {
+            Actual(byte) => format!("{byte:X}"),
+            NN | N => format!("{byte:X}"),
+            O => format!("{:X}", byte as i8),
+        }
+    }
+}
 //an operation mutates the state and returns a number of cycles
-type Operation = Box<dyn Fn(&mut Emulator) -> u8>;
+pub enum Op{
+    Single(OperationSingle),
+    Multi(OperationMulti),
+    Invalid(u8)
+}
+
+impl Op{
+    pub fn operate(&self, emulator : &mut Emulator) -> usize {
+        use Op::*; 
+        match self {
+            Single(op) => {
+                (op.code)(emulator);
+                op.cycles
+            },
+            Multi(multi) => {
+                multi.opcodes[emulator.next()].operate(emulator)
+            },
+            Invalid(byte) => {
+                console::log_1(&format!("called invalid operation at {byte:X}").into());
+                0
+            },
+        }
+    }
+    pub fn describe(&self, emulator : &Emulator, index : u16) -> String {
+        use Op::*; 
+        match self {
+            Single(OperationSingle{bytes, desc, .. }) => {
+                let bytes = bytes.iter().enumerate().map(|(i, b)| b.describe(emulator.mem_read(index+i as u16))).collect::<Vec<_>>().join(" ");
+                format!("{bytes:?}({desc})")
+            },
+            Multi(OperationMulti{opcodes, ..}) => {
+                let byte = emulator.mem_read(index);
+                format!("{byte:X} {}", opcodes[byte].describe(emulator, index+1))
+            },
+            Invalid(byte) => "!!!".to_string(),
+        }
+    }
+}
+
+struct OperationSingle {
+    code : Box<dyn OpMut>,
+    desc : String,
+    cycles : usize,
+    bytes: Vec<OpByte>
+}
+struct OperationMulti {
+    opcodes : Opcodes,
+    is_FDCB : bool
+}
 trait OpRead8 : Fn(&mut Emulator) -> u8 {}
 trait OpRead16 : Fn(&mut Emulator) -> u16 {}
 trait OpWrite8 : Fn(&mut Emulator, u8) -> () {}
@@ -195,10 +252,10 @@ fn compatible(r : &Reader, w : &Writer) -> bool{
 }
 
 #[derive(Debug)]
-struct OpcodeDef<'a>{
-    op : &'a str,
-    codes : Vec<&'a str>,
-    cycles : u8
+struct OpcodeDef{
+    op : String,
+    codes : Vec<String>,
+    cycles : usize
 }
 
 use self::Instructions::*;
@@ -1061,7 +1118,7 @@ fn make_writer(s : &str) -> Writer{
 
 }
 
-fn make_op(def : & OpcodeDef, depth : usize) -> Option<Operation>{
+fn make_op(def : & OpcodeDef, depth : usize) -> Option<Op>{
     let codes = def.codes[depth..].to_vec();
     let cycles = def.cycles;
     let contents : Vec<_> = def.op.split_whitespace().collect();
@@ -1086,11 +1143,16 @@ fn make_op(def : & OpcodeDef, depth : usize) -> Option<Operation>{
     };
     if ok {
         let to_do = make_standalone(op, contents);
-        if let Some(to_do) = to_do {
-            Some(Box::new(move |s| {
-                to_do(s);
-                cycles
-            }))
+        if let Some(code) = to_do {
+            let bytes = def.codes.iter().map(|s|
+                match s.as_str(){
+                    "n" => OpByte::N,
+                    "nn" => OpByte::NN,
+                    "o" => OpByte::O,
+                    b => OpByte::Actual(u8::from_str_radix(&b, 16).expect(&format!("{b}")))
+                }).collect();
+            let desc = def.op.to_string();
+            Some(Op::Single(OperationSingle{code, bytes, desc, cycles}))
         }else{
             None
         }
@@ -1155,13 +1217,15 @@ fn make_composite(opcodes : &mut Opcodes, key : &str, def : &OpcodeDef, recursio
         let mut ok = 0;
         for (name, offset) in &registers {
             let op = def.op.replace(replacement, name);
-            let def_copy = OpcodeDef{
-                op: &op,
+            let mut def_copy = OpcodeDef{
+                op: op.to_string(),
                 codes: def.codes.to_vec(),
                 cycles: def.cycles
             };
+            let byte = base+offset;
+            def_copy.codes[recursion_depth] = format!("{byte:X}");
             if let Some(op) = make_op(&def_copy, recursion_depth){
-                opcodes[base+offset] = op;
+                opcodes[byte] = op;
                 ok +=1;
             }else{
                 // console::log_1(&format!(".. >replaced composite opcode {} ({}): {} -> {}", base, replacement, def.op, op).into());
@@ -1190,11 +1254,12 @@ fn expand_bits(opcodes : &mut Opcodes, key : &str, def : &OpcodeDef, recursion_d
         for bit in 0..8u8 {//8 ops for the 8 possible bits
             let byte = base_byte + bit;
             let op = def.op.replace("b", &bit.to_string());
-            let def_copy = OpcodeDef{
-                op: &op,
+            let mut def_copy = OpcodeDef{
+                op: op.to_string(),
                 codes: def.codes.to_vec(),
                 cycles: def.cycles
             };
+            def_copy.codes[recursion_depth] = format!("{byte:X}");
             if is_composite {
                 let (todo, done) = make_composite(opcodes, &format!("{base}{end}"), &def_copy, recursion_depth);
                 total += todo;
@@ -1233,8 +1298,8 @@ mod tests {
     #[test]
     fn test_IX_registers() {
         let def = OpcodeDef{
-                op: "LD IXl,IXh",
-                codes: vec!["DD", "68+p"],
+                op: "LD IXl,IXh".to_string(),
+                codes: vec!["DD".to_string(), "68".to_string()],
                 cycles: 8
             };
 
