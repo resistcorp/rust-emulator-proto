@@ -66,8 +66,8 @@ impl Emu{
     pub fn clock(&mut self){
         self.emulator.clock(&self.opcodes);
     }
-    pub fn tick(&mut self, time : f64) -> f64{
-        self.emulator.tick(time, &self.opcodes)
+    pub fn advance(&mut self, time : f64) -> f64{
+        self.emulator.advance(time, &self.opcodes)
     }
 
     pub fn take(&mut self) -> Vec<u8>{
@@ -94,7 +94,7 @@ impl Emulator{
         buffers[1][1] = 100;
         buffers[2][1] = 200;
         let mut ports = (0..0xFF).map(Port::new).collect::<Vec<_>>();
-        let vdp = VDP::new(&mut ports);
+        let vdp = VDP::new();
 
         let size = Size{width, height};
         let time = 0.0;
@@ -133,11 +133,15 @@ impl Emulator{
         self.flags()
     }
     
-    fn tick(&mut self, time : f64, opcodes : &Opcodes) -> f64{
+    fn advance(&mut self, time : f64, opcodes : &Opcodes) -> f64{
+        let cycletime = 1f64/4_000f64;
         let delta = time - self.time;
+        let cycles = (delta * cycletime) as usize;
         println!("delta {:?}", delta);
         if self.running {
-            self.clock(opcodes);
+            for _ in 0..cycles{
+                self.clock(opcodes);
+            }
         }
         if self.running && delta >= 1000./60.{
             let mut buf = self.take();
@@ -173,10 +177,13 @@ impl Emulator{
     }
     
     fn port_write(&mut self, addr : u8, v : u8) {
-        self.ports[addr as usize].write(v);
+        let old = self.ports[addr as usize].write(v);
+        self.vdp.on_write(addr, old, v);
     }
     fn port_read(&self, addr : u8) -> u8 {
-        self.ports[addr as usize].read()
+        let v = self.ports[addr as usize].read();
+        self.vdp.on_read(addr, v);
+        v
     }
     
     fn noop(&mut self) -> usize { 0 }
@@ -512,6 +519,10 @@ impl Default for VDPDisplayMode{
  *  CD1 CD0 A13 A12 A11 A10 A09 A08    Second byte written
  *  A07 A06 A05 A04 A03 A02 A01 A00    First byte written
  * */
+
+const VDP_CONTROL : u8 = 0xBE;
+
+
 #[derive(Debug)]
 struct VDP {
     ram : [u8; 0x2000],
@@ -548,11 +559,17 @@ impl Default for VDP{
         Self{ram, addr, code,h_counter,v_counter,flag_first_byte,display_width,display_height,flag_int,flag_ovr,flag_col,display_mode,registers}
     }
 }
+
+trait PortWriteListener {
+    fn on_write(&mut self, port : u8, old_val : u8, new_val : u8);
+}
+trait PortReadListener {
+    fn on_read(&mut self, port : u8, val : u8);
+}
+
 impl VDP{
-    fn new(ports : &mut Vec<Port>) -> Self {
+    fn new() -> Self {
         let mut ret : Self = Self::default();
-        // ports[0xBF].on_write(Box::new(|b,a|ret.write_ctrl(b, a)));
-        // ports[0xBF].on_read(Box::new(|val|ret.read_ctrl(val)));
         ret
     }
     fn clock(&mut self){
@@ -574,41 +591,41 @@ impl VDP{
         console::log_1(&format!("VDP control port was read to {value}").into())
     }
 }
+impl PortReadListener for VDP {
+    fn on_read(&mut self, port : u8, val : u8){
+        match port {
+            VDP_CONTROL => self.read_ctrl(val),
+        }
+    }
+}
+
+impl PortWriteListener for VDP {
+    fn on_write(&mut self, port : u8, old_val : u8, new_val : u8){
+        match port {
+            VDP_CONTROL => self.write_ctrl(old_val, new_val),
+        }
+    }
+}
 
 struct Port{
     value : u8,
     address : u8,
-    on_reads : Vec<Box<dyn Fn(u8)>>,
-    on_writes : Vec<Box<dyn Fn(u8, u8)>>
 }
 
 impl Port{
     fn new(address : u8) -> Self {
         Self{
             value : 0, address,
-            on_reads : vec![],
-            on_writes : vec![],
         }
-    }
-    fn on_read(&mut self, listener : Box<dyn Fn(u8)>){
-        self.on_reads.push(listener)
-    }
-    fn on_write(&mut self, listener : Box<dyn Fn(u8, u8)>){
-        self.on_writes.push(listener)
     }
     fn read(&self) -> u8 {
         let value = self.value;
-        for listener in &self.on_reads{
-            listener(value)
-        }
         value
     }
-    fn write(&mut self, value : u8) {
+    fn write(&mut self, value : u8) -> u8 {
         let before = self.value;
         self.value = value;
-        for listener in &self.on_writes{
-            listener(before, value)
-        }
+        before
     }
 }
 

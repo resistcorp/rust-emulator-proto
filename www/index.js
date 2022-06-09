@@ -29,8 +29,8 @@ function frame(time){
 export function getMemory(){
 	let buff = new Uint8Array(256);
 	let pos = emulo.mem_around_pc(buff);
-	console.log("we are at position", pos)
-	console.log("current memory is", [...buff].map(i => "0x" + i.toString(16)))
+	// console.log("we are at position", pos)
+	// console.log("current memory is", [...buff].map(i => "0x" + i.toString(16)))
 	getState()
 	document.getElementById("state").innerHTML = getState()
 }
