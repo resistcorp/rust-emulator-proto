@@ -6,9 +6,11 @@
   "directories": {
     "test": "tests"
   },
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "scripts": {
-    "dev": "node first.js",
-    "test": "test"
+    "dev": "node first.js"
   },
   "repository": {
     "type": "git",
@@ -16,7 +18,7 @@
   },
   "author": "Boris Evieux",
   "license": "WTFPL",
-  "type" : "module",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/resistcorp/rust-emulator-proto/issues"
   },

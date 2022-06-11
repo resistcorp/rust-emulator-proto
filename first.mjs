@@ -6,6 +6,8 @@ import readline from "readline";
 import { platform } from "os";
 
 const WINDOWS_PLATFORM = 'win32';
+const LINUX_PLATFORM = 'linux';
+const MAC_PLATFORM = '---';
 const osPlatform = platform(); 
 const port = 8080;
 
@@ -64,7 +66,7 @@ async function start_interface(abort_controller, messaging) {
   do{
   	// process.stdout.write("wyw ? >");
   	const {value, error, done} = await question("wywd ?");
-  	run &&= !done;
+  	run = run && !done;
   	if(error){//something asked us to wait
   		await Promise.resolve(error);
   		continue;
@@ -292,12 +294,19 @@ async function open_browser(){
 	   //warning untested except windows
 		const url = "http://localhost:"+port;
 			let command;
-			if (osPlatform === WINDOWS_PLATFORM) {
-			  command = `start /B ${url}`;
-			} else if (osPlatform === MAC_PLATFORM) {
-			  command = `open -a "Google Chrome" ${url}`;
-			} else {
-			  command = `google-chrome --no-sandbox ${url}`;
+			switch (osPlatform) {
+				case WINDOWS_PLATFORM : 
+				  command = `start /B ${url}`;
+				  break;
+				case LINUX_PLATFORM : 
+			  	command = `google-chrome --no-sandbox ${url}`;
+				  break;
+				case MAC_PLATFORM : 
+			  	command = `open -a "Google Chrome" ${url}`;
+				  break;
+				default:
+					console.log("unhandled platform", osPlatform);
+					return
 			}
 			exec(command, {}, ()=>{
 				console.log("browser is open");

@@ -22,18 +22,20 @@ Currently I'm parsing the [CSV](src/instructions.csv) (adapted from the table av
 Then we'll need to emulate the VDP but that's going to be easier
 
 ### setup 
-I used the wasm template to kickstart the project. It is going away soon
-
-[tutorials]: https://rustwasm.github.io/docs/wasm-pack/tutorials/index.html
-[template-docs]: https://rustwasm.github.io/docs/wasm-pack/tutorials/npm-browser-packages/index.html
 
 - needs rust nightly for now until I lose the bigint dependency
-- needs node for hot-reload during dev
+- needs node >=16.0 for hot-reload during dev
 
-again, you should be able to start everything with `node first.js`
+again, you should be able to start everything with `node first.mjs`
 
 on windows, [this batch](start_emulator_dev.bat) will setup a "usable" live code experience on virtual disk W:
 
+feel free to propose similar ones for other os's
+
+I used the wasm template to kickstart the project. You don't need to know about it but here it is
+
+[tutorials]: https://rustwasm.github.io/docs/wasm-pack/tutorials/index.html
+[template-docs]: https://rustwasm.github.io/docs/wasm-pack/tutorials/npm-browser-packages/index.html
 
 
 ### 🛠️ dev with `www/npm run dev` and `wasm-pack build`
