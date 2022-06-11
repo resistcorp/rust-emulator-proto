@@ -23,8 +23,10 @@ Then we'll need to emulate the VDP but that's going to be easier
 
 ### setup 
 
+- needs [wasm-pack](https://github.com/rustwasm/wasm-pack)
 - needs rust nightly for now until I lose the bigint dependency
-- needs node >=16.0 for hot-reload during dev
+- needs node >= 16.0 for hot-reload during dev
+- we don't have node dependencies but at least `npm i` will tell you if you don't have a node recent enough
 
 again, you should be able to start everything with `node first.mjs`
 
